@@ -1,4 +1,4 @@
-/*
+﻿/*
 ---------------------------------------------------------------------------
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /** @file  Importer.cpp
  *  @brief Implementation of the CPP-API class #Importer
  */
-
+#define ASSIMP_CATCH_GLOBAL_EXCEPTIONS
 #include <assimp/version.h>
 #include <assimp/config.h>
 #include <assimp/importerdesc.h>
@@ -696,6 +696,7 @@ const aiScene* Importer::ReadFile( const char* _pFile, unsigned int pFlags)
             profiler->EndRegion("total");
         }
     }
+
 #ifdef ASSIMP_CATCH_GLOBAL_EXCEPTIONS
     catch (std::exception &e)
     {

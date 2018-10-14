@@ -1,4 +1,4 @@
-/*
+﻿/*
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
@@ -54,6 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assimp/CreateAnimMesh.h>
 
 #include <memory>
+#include <math.h>
 
 #include "MakeVerboseFormat.h"
 
@@ -434,6 +435,88 @@ void glTF2Importer::ImportMeshes(glTF2::Asset& r)
 
                     delete [] tangents;
                 }
+            }
+
+            // import vertex weights binding.
+            
+            if (attr.joint.size() > 0 && attr.joint[0]) {
+                aim->mNumBones = r.skins[0].jointNames.size();
+                std::map<int, int> bonesIndices;
+                aim->mBones = new aiBone*[aim->mNumBones];
+                std::vector<aiVertexWeight>* boneWeights = new std::vector<aiVertexWeight>[aim->mNumBones];
+                auto* indexPointer = attr.joint[0]->GetPointer();
+                auto* weightPointer = attr.weight[0]->GetPointer();
+                
+                for (unsigned int i = 0;i < attr.joint[0]->count;i++) {
+                    unsigned int index[4] = { 0 };
+                    float weights[4] = { 0 };
+                    if (attr.joint[0]->componentType == ComponentType_UNSIGNED_BYTE) {
+                        index[0] = *reinterpret_cast<unsigned char*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                        index[1] = *reinterpret_cast<unsigned char*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                        index[2] = *reinterpret_cast<unsigned char*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                        index[3] = *reinterpret_cast<unsigned char*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                    }
+                    else {
+                        index[0] = *reinterpret_cast<unsigned short*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                        index[1] = *reinterpret_cast<unsigned short*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                        index[2] = *reinterpret_cast<unsigned short*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                        index[3] = *reinterpret_cast<unsigned short*>(indexPointer);
+                        indexPointer += attr.joint[0]->GetBytesPerComponent();
+                    }
+
+                    if (attr.weight[0]->componentType == ComponentType_FLOAT) {
+                        weights[0] = *reinterpret_cast<float*>(weightPointer);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[1] = *reinterpret_cast<float*>(weightPointer);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[2] = *reinterpret_cast<float*>(weightPointer);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[3] = *reinterpret_cast<float*>(weightPointer);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                    }
+                    else if (attr.weight[0]->componentType == ComponentType_UNSIGNED_BYTE) {
+                        weights[0] = std::max(*reinterpret_cast<unsigned char*>(weightPointer)/255.0,1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[1] = std::max(*reinterpret_cast<unsigned char*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[2] = std::max(*reinterpret_cast<unsigned char*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[3] = std::max(*reinterpret_cast<unsigned char*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                    } else if (attr.weight[0]->componentType == ComponentType_UNSIGNED_SHORT) {
+                        weights[0] = std::max(*reinterpret_cast<unsigned short*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[1] = std::max(*reinterpret_cast<unsigned short*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[2] = std::max(*reinterpret_cast<unsigned short*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                        weights[3] = std::max(*reinterpret_cast<unsigned short*>(weightPointer) / 255.0, 1.0);
+                        weightPointer += attr.weight[0]->GetBytesPerComponent();
+                    }
+
+                    for (int d = 0;d < 4;d++) {
+                        boneWeights[index[d]].emplace_back(i, weights[d]);
+                    }
+                }
+                auto* inverseBindMP = r.skins[0].inverseBindMatrices->GetPointer();
+                for (unsigned int i = 0;i < aim->mNumBones;i++) {
+                    aim->mBones[i] = new aiBone;
+                    aim->mBones[i]->mName = r.skins[0].jointNames[i]->name;
+                    aim->mBones[i]->mNumWeights = boneWeights[i].size();
+                    memcpy(&aim->mBones[i]->mOffsetMatrix, inverseBindMP, sizeof(aiMatrix4x4));
+                    inverseBindMP += r.skins[0].inverseBindMatrices->GetElementSize();
+                    if (aim->mBones[i]->mNumWeights <= 0) continue;
+                    aim->mBones[i]->mWeights = new aiVertexWeight[boneWeights[i].size()];
+                    memcpy(aim->mBones[i]->mWeights, &boneWeights[i][0], sizeof(aiVertexWeight)*boneWeights[i].size());
+                }
+                delete[] boneWeights;
             }
 
             for (size_t tc = 0; tc < attr.texcoord.size() && tc < AI_MAX_NUMBER_OF_TEXTURECOORDS; ++tc) {
@@ -847,6 +930,186 @@ void glTF2Importer::ImportEmbeddedTextures(glTF2::Asset& r)
     }
 }
 
+void glTF2Importer::ImportAnimations(glTF2::Asset& a) {
+    const unsigned int size = a.animations.Size();
+    this->mScene->mNumAnimations = size;
+    this->mScene->mAnimations = new aiAnimation*[size];
+    aiAnimation** pAnimArrayHead = this->mScene->mAnimations;
+    for (unsigned int i = 0;i < size;i++) {
+        auto& animation = a.animations[i];
+        aiAnimation* pAnim = pAnimArrayHead[i] = new aiAnimation;
+        pAnim->mNumChannels = animation.Channels.size();
+        std::vector<aiNodeAnim*>* Channels = new std::vector<aiNodeAnim*>();
+        Channels->reserve(pAnim->mNumChannels);
+        pAnim->mName = animation.name;
+        pAnim->mTicksPerSecond = 0;
+        std::map<std::string, unsigned int> nodeProcessed;
+        for (unsigned int d = 0;d < pAnim->mNumChannels;d++) {
+            auto& cNodeAnim = animation.Channels[d];
+            const auto name = cNodeAnim.target.node->name;
+            aiNodeAnim* pNodeAnim;
+            if (nodeProcessed.find(name) == nodeProcessed.end()) {
+                pNodeAnim = new aiNodeAnim;
+                pNodeAnim->mNodeName = name;
+                nodeProcessed.insert(std::make_pair(name, Channels->size()));
+                Channels->push_back(pNodeAnim);
+            }
+            else {
+                pNodeAnim = (*Channels)[nodeProcessed[name]];
+            }
+            auto& sampler = animation.Samplers[cNodeAnim.sampler];
+            auto input = a.accessors.Get(atoi(sampler.input.data())-1);
+            auto output = a.accessors.Get(atoi(sampler.output.data())-1);
+            auto* inputStart = input->GetPointer();
+            auto* outputStart = output->GetPointer();
+            if (input->count != output->count) continue;
+
+            float lastTime = -1; // there are duplicate keys exist
+            int finalLength = 0;
+
+            if (cNodeAnim.target.path == "rotation") {
+                pNodeAnim->mNumRotationKeys = input->count;
+                pNodeAnim->mRotationKeys = new aiQuatKey[input->count];
+                for (int t = 0;t < input->count;t++) {
+                    float thisTime = *reinterpret_cast<float*>(inputStart);
+                    inputStart += input->GetElementSize();
+                    if (lastTime == thisTime)
+                    {
+                        outputStart += output->GetElementSize();
+                        continue;
+                        //
+                    }
+                    pNodeAnim->mRotationKeys[finalLength].mTime = thisTime;
+                    lastTime = thisTime;
+                    float a, b, c, d;
+                    switch (output->componentType) {
+                    case ComponentType_BYTE:
+                        a = std::max(*reinterpret_cast<char*>(outputStart) / 127.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        b = std::max(*reinterpret_cast<char*>(outputStart) / 127.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        c = std::max(*reinterpret_cast<char*>(outputStart) / 127.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        d = std::max(*reinterpret_cast<char*>(outputStart) / 127.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        break;
+                    case ComponentType_UNSIGNED_BYTE:
+                        a = *reinterpret_cast<unsigned char*>(outputStart) / 255.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        b = *reinterpret_cast<unsigned char*>(outputStart) / 255.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        c = *reinterpret_cast<unsigned char*>(outputStart) / 255.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        d = *reinterpret_cast<unsigned char*>(outputStart) / 255.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        break;
+                    case ComponentType_SHORT:
+                        a = std::max(*reinterpret_cast<short*>(outputStart) / 32767.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        b = std::max(*reinterpret_cast<short*>(outputStart) / 32767.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        c = std::max(*reinterpret_cast<short*>(outputStart) / 32767.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        d = std::max(*reinterpret_cast<short*>(outputStart) / 32767.0f, -1.0f);
+                        outputStart += output->GetBytesPerComponent();
+                        break;
+                    case ComponentType_UNSIGNED_SHORT:
+                        a = *reinterpret_cast<unsigned short*>(outputStart) / 65535.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        b = *reinterpret_cast<unsigned short*>(outputStart) / 65535.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        c = *reinterpret_cast<unsigned short*>(outputStart) / 65535.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        d = *reinterpret_cast<unsigned short*>(outputStart) / 65535.0f;
+                        outputStart += output->GetBytesPerComponent();
+                        break;
+                    default:
+                        a = *reinterpret_cast<float*>(outputStart);
+                        outputStart += output->GetBytesPerComponent();
+                        b = *reinterpret_cast<float*>(outputStart);
+                        outputStart += output->GetBytesPerComponent();
+                        c = *reinterpret_cast<float*>(outputStart);
+                        outputStart += output->GetBytesPerComponent();
+                        d = *reinterpret_cast<float*>(outputStart);
+                        outputStart += output->GetBytesPerComponent();
+                    }
+                    pNodeAnim->mRotationKeys[finalLength++].mValue = aiQuaternion(a, b, c, d);
+                }
+
+                auto* realKeys = new aiQuatKey[finalLength];
+                memcpy(realKeys, pNodeAnim->mRotationKeys, sizeof(aiQuatKey) * finalLength);
+                std::swap(realKeys, pNodeAnim->mRotationKeys);
+                delete[] realKeys;
+
+                pNodeAnim->mNumRotationKeys = finalLength;
+            }
+            else if (cNodeAnim.target.path == "position") {
+                pNodeAnim->mNumPositionKeys = input->count;
+                pNodeAnim->mPositionKeys = new aiVectorKey[input->count];
+
+                for (int t = 0;t < input->count;t++) {
+                    float thisTime = *reinterpret_cast<float*>(inputStart);
+                    inputStart += input->GetElementSize();
+                    if (lastTime == thisTime)
+                    {
+                        outputStart += output->GetElementSize();
+                        continue;
+                        //
+                    }
+                    pNodeAnim->mPositionKeys[finalLength].mTime = thisTime;
+                    lastTime = thisTime;
+                    memcpy(&pNodeAnim->mPositionKeys[finalLength++].mValue, outputStart, sizeof(aiVector3D));
+                    outputStart += output->GetElementSize();
+                }
+
+                auto* realKeys = new aiVectorKey[finalLength];
+                memcpy(realKeys, pNodeAnim->mPositionKeys, sizeof(aiVectorKey) * finalLength);
+                std::swap(realKeys, pNodeAnim->mPositionKeys);
+                delete[] realKeys;
+
+                pNodeAnim->mNumPositionKeys = finalLength;
+            }
+            else if (cNodeAnim.target.path == "scale") {
+                pNodeAnim->mNumScalingKeys = input->count;
+                pNodeAnim->mScalingKeys = new aiVectorKey[input->count];
+                for (int t = 0;t < input->count;t++) {
+                    float thisTime = *reinterpret_cast<float*>(inputStart);
+                    inputStart += input->GetElementSize();
+                    if (lastTime == thisTime)
+                    {
+                        outputStart += output->GetElementSize();
+                        continue;
+                        //
+                    }
+                    pNodeAnim->mScalingKeys[finalLength].mTime = thisTime;
+                    lastTime = thisTime;
+                    memcpy(&pNodeAnim->mScalingKeys[finalLength++].mValue, outputStart, sizeof(aiVector3D));
+                    outputStart += output->GetElementSize();
+                }
+
+                auto* realKeys = new aiVectorKey[finalLength];
+                memcpy(realKeys, pNodeAnim->mScalingKeys, sizeof(aiVectorKey) * finalLength);
+                std::swap(realKeys, pNodeAnim->mScalingKeys);
+                delete[] realKeys;
+                pNodeAnim->mNumScalingKeys = finalLength;
+            }
+            else if (cNodeAnim.target.path == "weights") {
+                // what is that
+            }
+
+            
+        }
+        pAnim->mChannels = new aiNodeAnim*[Channels->size()];
+        memcpy(pAnim->mChannels, &Channels->at(0), sizeof(aiNodeAnim*) * Channels->size());
+        pAnim->mNumChannels = Channels->size();
+        delete Channels;
+    }
+}
+
+void glTF2Importer::ImportSkins(glTF2::Asset& a) {
+    
+}
+
 void glTF2Importer::InternReadFile(const std::string& pFile, aiScene* pScene, IOSystem* pIOHandler) {
 
     this->mScene = pScene;
@@ -867,9 +1130,15 @@ void glTF2Importer::InternReadFile(const std::string& pFile, aiScene* pScene, IO
     ImportCameras(asset);
 
     ImportNodes(asset);
+    
+    ImportAnimations(asset);
+
+    ImportSkins(asset);
 
     if (pScene->mNumMeshes == 0) {
+
         pScene->mFlags |= AI_SCENE_FLAGS_INCOMPLETE;
+        
     }
 }
 

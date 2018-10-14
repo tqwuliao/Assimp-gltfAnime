@@ -1,4 +1,4 @@
-/*
+﻿/*
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
@@ -783,6 +783,55 @@ inline void Texture::Read(Value& obj, Asset& r)
     }
 }
 
+inline void Skin::Read(Value& obj, Asset& r) {
+	inverseBindMatrices = r.accessors.Retrieve(FindUInt(obj, "inverseBindMatrices")->GetUint());
+	if (Value* joints = FindArray(obj, "joints")) {
+		jointNames.reserve(joints->Size());
+		for (unsigned int i = 0;i < joints->Size();i++) {
+			jointNames.push_back(r.nodes.Retrieve(joints->GetArray()[i].GetUint()));
+		}
+	}
+	
+}
+
+inline void Animation::Read(Value& obj, Asset& r) {
+	// Animation parse here.
+	if (Value* channels = FindArray(obj, "channels")) {
+		this->Channels.reserve(channels->Size());
+		for (unsigned int i = 0; i < channels->Size(); ++i) {
+			Value& child = (*channels)[i];
+			AnimChannel channel;
+			ReadMember(child, "sampler", channel.sampler);
+			if (Value* target = FindObject(child, "target")) {
+				channel.target.node = r.nodes.Retrieve(FindUInt(*target, "node")->GetUint());
+				ReadMember(*target, "path", channel.target.path);
+			}
+			this->Channels.push_back(channel);
+		}
+	}
+	if (Value* samplers = FindArray(obj, "samplers")) {
+		this->Samplers.reserve(samplers->Size());
+		for (unsigned int i = 0; i < samplers->Size(); ++i) {
+			Value& child = (*samplers)[i];
+			AnimSampler sampler;
+			int input, output;
+			ReadMember(child, "input", input);
+			// force accessor
+			r.accessors.Retrieve(input);
+			ReadMember(child, "interpolation", sampler.interpolation);
+			ReadMember(child, "output", output);
+			r.accessors.Retrieve(output);
+			std::stringstream sss;
+			sss << input;
+			sampler.input = sss.str();
+			std::stringstream sss2;
+			sss2 << output;
+			sampler.output = sss2.str();
+			this->Samplers.push_back(sampler);
+		}
+	}
+}
+
 namespace {
     inline void SetTextureProperties(Asset& r, Value* prop, TextureInfo& out)
     {
@@ -1276,6 +1325,20 @@ inline void Asset::Load(const std::string& pFile, bool isBinary)
             this->scene = scenes.Retrieve(sceneIndex);
         }
     }
+
+	// For this version,force animation to be loaded not lazy
+	if (Value* animArray = FindArray(doc, "animations")) {
+		for (unsigned int animIndex = 0;animIndex < animArray->Size();animIndex++){
+			animations.Retrieve(animIndex);
+		}
+	}
+
+	// For this version,force skins to be loaded not lazy
+	if (Value* skinArray = FindArray(doc, "skins")) {
+		for (unsigned int skinIndex = 0; skinIndex <  skinArray->Size(); skinIndex++) {
+			skins.Retrieve(skinIndex);
+		}
+	}
 
     // Clean up
     for (size_t i = 0; i < mDicts.size(); ++i) {

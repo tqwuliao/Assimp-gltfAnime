@@ -1,4 +1,4 @@
-/*
+﻿/*
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
@@ -83,6 +83,10 @@ private:
     void ImportCameras(glTF2::Asset& a);
     void ImportLights(glTF2::Asset& a);
     void ImportNodes(glTF2::Asset& a);
+
+    void ImportAnimations(glTF2::Asset& a);
+
+	void ImportSkins(glTF2::Asset & a);
 
 };
 
